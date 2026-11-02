@@ -57,11 +57,12 @@ Khi hiện thực hóa đồ án trên môi trường mô phỏng (Cisco Packet 
 ## 4. Bàn giao và Phối hợp Liên thành viên
 
 1. **Gửi cho Phước (Kiến trúc & IP):**
-   - Xác nhận số lượng switch, router, firewall đã khớp hoàn toàn với kiến trúc 3 tầng (Core - Distribution - Access) và bảng phân chia VLAN/IP của Contract v1.1.
+   - Xác nhận danh sách thiết bị trong BOM đã đồng bộ 100% với topology logic của Phước: gồm 2 Firewall HA (`FW1`, `FW2`), 2 Router WAN (`WAN1`, `WAN2`), 2 Core Switch L3 (`CORE1`, `CORE2`), 2 Distribution Switch (`DIST_A`, `DIST_B`), 1 DMZ Switch (`DMZ_SW`) và 1 Camera Switch (`CAM_SW`).
+   - Góp ý cho Phước bổ sung khối Core Switch L3 (`CSW-DBP-01`, `CSW-BHTQ-01`) và 2 server chi nhánh tại DBP và BHTQ trên sơ đồ để đồng bộ trọn vẹn với Network Contract v1.1.
    - Bố trí cổng Uplink 10GbE từ Distribution Switch về Core Switch để đảm bảo không bị thắt cổ chai nội bộ.
 2. **Gửi cho Toàn (Bảo mật):**
    - Cung cấp thông số lưu lượng WAN và Internet Edge để Toàn chọn cấu hình phần cứng Firewall có thông lượng kiểm tra bảo mật (Threat Protection / IPS Throughput) đạt tối thiểu 1 Gbps.
    - Chuyển giao các giả định về dải mạng và cổng ứng dụng (HIS, PACS port 104/DICOM, Web 80/443, OSPF IP 89) để Toàn xây dựng Ma trận Access Control.
 3. **Gửi cho Trung (Mô phỏng):**
-   - Cung cấp danh sách thiết bị đại diện trong file Packet Tracer `HospitalNetwork_v1.pkt`.
+   - Cung cấp danh sách thiết bị đại diện trong file Packet Tracer `HospitalNetwork_v1.pkt`: gồm 2 Router WAN biên (`RTR-MAIN-01`, `RTR-MAIN-02`), 2 Router chi nhánh (`RTR-DBP-01`, `RTR-BHTQ-01`), Core Switch 3650, Switch DMZ và các PC đại diện cho từng VLAN.
    - Cung cấp danh mục các bài test kiểm tra throughput, độ trễ ping và hội tụ OSPF khi ngắt thử nghiệm 1 đường WAN để Trung ghi nhận kết quả và chụp màn hình bằng chứng.

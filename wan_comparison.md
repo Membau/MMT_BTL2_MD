@@ -57,24 +57,24 @@ Trong môi trường thực tế của một bệnh viện đa cơ sở, giải 
 
 Để đảm bảo tính khả thi cao nhất trên công cụ **Cisco Packet Tracer** mà nhóm đã thống nhất (theo Network Contract v1.1):
 - **Công nghệ triển khai mô phỏng:** **Point-to-Point Leased Line (sử dụng Serial hoặc Gigabit Ethernet Routed Interfaces) kết hợp Giao thức định tuyến động OSPFv2 (Open Shortest Path First)**.
-- **Phân bổ địa chỉ Subnet WAN theo Contract:**
+- **Phân bổ địa chỉ Subnet WAN theo Contract và Topology (khớp WAN1, WAN2 của Phước):**
   - Tuyến `MAIN - DBP`: Subnet `10.255.0.0/30`
-    - IP đầu Main (RTR-MAIN hoặc CSW-MAIN): `10.255.0.1/30`
-    - IP đầu DBP (RTR-DBP): `10.255.0.2/30`
+    - IP đầu Main (RTR-MAIN-01 / WAN1): `10.255.0.1/30`
+    - IP đầu DBP (RTR-DBP-01 / BR1_ROUTER): `10.255.0.2/30`
   - Tuyến `MAIN - BHTQ`: Subnet `10.255.0.4/30`
-    - IP đầu Main (RTR-MAIN hoặc CSW-MAIN): `10.255.0.5/30`
-    - IP đầu BHTQ (RTR-BHTQ): `10.255.0.6/30`
+    - IP đầu Main (RTR-MAIN-02 / WAN2): `10.255.0.5/30`
+    - IP đầu BHTQ (RTR-BHTQ-01 / BR2_ROUTER): `10.255.0.6/30`
 - **Giao thức OSPFv2 (Process ID 1, Backbone Area 0):**
   - Tự động quảng bá dải mạng các site: Main (`10.10.0.0/16`), DBP (`10.20.0.0/16`), BHTQ (`10.30.0.0/16`).
   - Hội tụ nhanh khi có sự cố, dễ kiểm tra bằng các lệnh `show ip ospf neighbor`, `show ip route`.
 - **Cơ chế dự phòng mô phỏng:**
-  - Tại Main Site, mô phỏng 2 đường kết nối ra Internet qua ISP (sử dụng 2 địa chỉ IP Public khác nhau) cấu hình Default Route và Floating Static Route / IP SLA tracking hoặc cân bằng tải bằng Router biên.
+  - Tại Main Site, mô phỏng 2 đường kết nối ra Internet qua ISP (sử dụng 2 địa chỉ IP Public khác nhau) kết nối vào 2 Firewall HA (`FW-MAIN-01`, `FW-MAIN-02`) và 2 Router WAN (`RTR-MAIN-01`, `RTR-MAIN-02`), cấu hình Default Route và Floating Static Route / IP SLA tracking hoặc cân bằng tải.
 
 ---
 
-## 4. Sơ đồ Kiến trúc WAN Logic và Luồng Dữ liệu (Mermaid Diagram)
+## 4. Sơ đồ Kiến trúc WAN Logic và Luồng Dữ liệu (Khớp 100% Topology Phước)
 
-Dưới đây là sơ đồ kiến trúc WAN kết nối giữa 3 site và Internet Edge:
+Dưới đây là sơ đồ kiến trúc WAN kết nối giữa 3 site và Internet Edge, hoàn toàn đồng bộ với sơ đồ logic PlantUML của Phước:
 
 ```mermaid
 flowchart TD
@@ -85,15 +85,44 @@ flowchart TD
     end
 
     subgraph MAIN_SITE [" MAIN SITE (Cơ Sở Chính - TP.HCM) "]
-        FW_MAIN["Firewall Biên FW-MAIN-01<br>(NAT/PAT, DMZ, Security Policy)"]
-        RTR_MAIN["WAN Router Biên RTR-MAIN-01"]
-        CSW_MAIN["Core Switch L3 CSW-MAIN-01<br>(OSPF Area 0, Inter-VLAN)"]
-        
-        subgraph MAIN_LAN ["Các Vùng Mạng Nội Bộ Main Site"]
+        subgraph EDGE_LAYER ["Lớp Bảo Mật & WAN Biên (HA Redundancy)"]
+            FW1["Firewall 1 Active (FW-MAIN-01)"]
+            FW2["Firewall 2 Standby (FW-MAIN-02)"]
+            WAN1["WAN Edge Router 1 (RTR-MAIN-01)"]
+            WAN2["WAN Edge Router 2 (RTR-MAIN-02)"]
+            FW1 <-->|HA State Sync| FW2
+            WAN1 <-->|WAN Redundancy| WAN2
+        end
+
+        subgraph DMZ_LAYER ["Vùng DMZ (VLAN 50)"]
+            DMZ_SW["DMZ Switch (SW-MAIN-DMZ-01)"]
+            DMZ_WEB["Reverse Proxy / Web Server"]
+            DMZ_PUB["Public DNS / Mail Gateway"]
+            DMZ_SW --- DMZ_WEB
+            DMZ_SW --- DMZ_PUB
+        end
+
+        subgraph CORE_LAYER ["Lớp Core Trung Tâm (Stack / MLAG)"]
+            CORE1["Core L3 Switch 1 (CSW-MAIN-01)"]
+            CORE2["Core L3 Switch 2 (CSW-MAIN-02)"]
+            CORE1 <-->|StackWise-Virtual| CORE2
+        end
+
+        subgraph DIST_LAYER ["Lớp Phân Phối (Distribution)"]
+            DIST_A["Distribution Tòa A (DSW-MAIN-A-01)"]
+            DIST_B["Distribution Tòa B (DSW-MAIN-B-01)"]
+        end
+
+        subgraph DC_SERVICES ["Hệ Thống Máy Chủ & Giám Sát Data Center"]
             SRV_FARM["Server Farm (VLAN 40)<br>HIS, PACS, LIS, CRM, DB"]
-            DMZ_NET["Vùng DMZ (VLAN 50)<br>Hospital Public Portal"]
-            STAFF_MAIN["Nhân viên Tòa A & B (VLAN 10/20)"]
-            GUEST_MAIN["Wi-Fi Bệnh nhân (VLAN 60)"]
+            CAM_SW["Camera Switch (SW-MAIN-CAM-01)"]
+            NVR_SYS["Hệ thống NVR & Quản lý Camera"]
+            CAM_SW --- NVR_SYS
+        end
+
+        subgraph ACCESS_USERS ["Máy Trạm Phòng Ban & Mạng Không Dây"]
+            STAFF_LAN["Máy trạm phòng ban Tòa A & B (VLAN 10/20)"]
+            WIFI_SYS["Hệ thống APs (Staff Wi-Fi & Guest Wi-Fi VLAN 60)"]
         end
     end
 
@@ -103,38 +132,60 @@ flowchart TD
     end
 
     subgraph SITE_DBP [" CƠ SỞ PHỤ DBP STREET "]
-        RTR_DBP["WAN Router RTR-DBP-01"]
-        CSW_DBP["Core Switch L3 CSW-DBP-01"]
-        LAN_DBP["Staff LAN (VLAN 10: 10.20.10.0/23)<br>260 Workstation + 2 Server"]
+        BR1_ROUTER["Branch Router 1 (RTR-DBP-01)"]
+        BR1_CSW["Branch Core L3 Switch (CSW-DBP-01)"]
+        BR1_SW["Branch Access Switches (7 Switch 48P)"]
+        BR1_USERS["260 Máy trạm + APs + Camera"]
+        BR1_SRV["2 Servers Cục bộ (RODC/Cache)"]
+        BR1_ROUTER --- BR1_CSW --- BR1_SW --- BR1_USERS
+        BR1_CSW --- BR1_SRV
     end
 
     subgraph SITE_BHTQ [" CƠ SỞ PHỤ BHTQ STREET "]
-        RTR_BHTQ["WAN Router RTR-BHTQ-01"]
-        CSW_BHTQ["Core Switch L3 CSW-BHTQ-01"]
-        LAN_BHTQ["Staff LAN (VLAN 10: 10.30.10.0/23)<br>260 Workstation + 2 Server"]
+        BR2_ROUTER["Branch Router 2 (RTR-BHTQ-01)"]
+        BR2_CSW["Branch Core L3 Switch (CSW-BHTQ-01)"]
+        BR2_SW["Branch Access Switches (7 Switch 48P)"]
+        BR2_USERS["260 Máy trạm + APs + Camera"]
+        BR2_SRV["2 Servers Cục bộ (RODC/Cache)"]
+        BR2_ROUTER --- BR2_CSW --- BR2_SW --- BR2_USERS
+        BR2_CSW --- BR2_SRV
     end
 
-    %% Kết nối Internet Edge
-    ISP1 --- FW_MAIN
-    ISP2 --- FW_MAIN
-    FW_MAIN --- RTR_MAIN
-    RTR_MAIN --- CSW_MAIN
+    %% Kết nối ISP ra Firewall
+    ISP1 --- FW1
+    ISP2 --- FW2
     ISP1 --- PUB_WEB
     ISP2 --- PUB_WEB
 
-    %% Kết nối Main LAN
-    CSW_MAIN --- SRV_FARM
-    CSW_MAIN --- DMZ_NET
-    CSW_MAIN --- STAFF_MAIN
-    CSW_MAIN --- GUEST_MAIN
+    %% Kết nối Firewall đến DMZ và Core
+    FW1 --- DMZ_SW
+    FW2 --- DMZ_SW
+    FW1 --- CORE1
+    FW2 --- CORE2
 
-    %% Kết nối WAN
-    RTR_MAIN === LL_DBP === RTR_DBP
-    RTR_MAIN === LL_BHTQ === RTR_BHTQ
+    %% Kết nối Core đến WAN Routers
+    WAN1 --- CORE1
+    WAN2 --- CORE2
 
-    %% Kết nối nội bộ site phụ
-    RTR_DBP --- CSW_DBP --- LAN_DBP
-    RTR_BHTQ --- CSW_BHTQ --- LAN_BHTQ
+    %% Kết nối Core đến Distribution và Server/CCTV
+    CORE1 --- DIST_A
+    CORE2 --- DIST_A
+    CORE1 --- DIST_B
+    CORE2 --- DIST_B
+    CORE1 --- SRV_FARM
+    CORE2 --- SRV_FARM
+    CORE1 --- CAM_SW
+    CORE2 --- CAM_SW
+
+    %% Kết nối Distribution đến Access
+    DIST_A --- STAFF_LAN
+    DIST_B --- STAFF_LAN
+    DIST_A --- WIFI_SYS
+    DIST_B --- WIFI_SYS
+
+    %% Kết nối WAN Leased Lines
+    WAN1 === LL_DBP === BR1_ROUTER
+    WAN2 === LL_BHTQ === BR2_ROUTER
 
     %% Định dạng style
     classDef main fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
@@ -142,8 +193,8 @@ flowchart TD
     classDef wan fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
     classDef net fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
 
-    class FW_MAIN,RTR_MAIN,CSW_MAIN,SRV_FARM,DMZ_NET,STAFF_MAIN,GUEST_MAIN main;
-    class RTR_DBP,CSW_DBP,LAN_DBP,RTR_BHTQ,CSW_BHTQ,LAN_BHTQ branch;
+    class FW1,FW2,WAN1,WAN2,CORE1,CORE2,DIST_A,DIST_B,SRV_FARM,DMZ_SW,CAM_SW,STAFF_LAN,WIFI_SYS main;
+    class BR1_ROUTER,BR1_CSW,BR1_SW,BR1_USERS,BR1_SRV,BR2_ROUTER,BR2_CSW,BR2_SW,BR2_USERS,BR2_SRV branch;
     class LL_DBP,LL_BHTQ wan;
     class ISP1,ISP2,PUB_WEB net;
 ```
@@ -153,11 +204,12 @@ flowchart TD
 ## 5. Kết luận và Khuyến nghị Kỹ thuật cho Nhóm
 
 1. **Về phía Phước (Kiến trúc & IP):**
-   - Đảm bảo các cổng WAN trên router được gán chính xác IP `/30` theo bảng phân bổ đã chốt trong Contract v1.1.
+   - Đảm bảo các cổng WAN trên 2 router `RTR-MAIN-01` (WAN1) và `RTR-MAIN-02` (WAN2) được gán chính xác IP `/30` theo bảng phân bổ Contract v1.1.
    - Thể hiện rõ trên sơ đồ các cổng kết nối Uplink từ Core Switch Main sang Router biên WAN và sang Firewall.
+   - Bổ sung khối Core Switch L3 (`CSW-DBP-01`, `CSW-BHTQ-01`) và 2 server chi nhánh tại DBP và BHTQ trên sơ đồ kiến trúc để đồng bộ hoàn toàn với Contract v1.1.
 2. **Về phía Toàn (Bảo mật):**
    - Xây dựng chính sách Firewall tại Main Site cho phép luồng định tuyến OSPF (IP Protocol 89) qua 2 đường Leased Line giữa Main và DBP/BHTQ.
    - Áp dụng cấu hình NAT Overload (PAT) cho cả 3 dải IP `10.10.0.0/16`, `10.20.0.0/16`, `10.30.0.0/16` khi truy cập Internet thông qua 2 cổng ra của Edge Firewall.
 3. **Về phía Trung (Mô phỏng Cisco Packet Tracer):**
-   - Cấu hình OSPF đơn vùng (Single-Area OSPF Area 0) trên RTR-MAIN, RTR-DBP và RTR-BHTQ để đảm bảo các PC tại DBP và BHTQ ping thông suốt đến Server Farm tại Main Site và ngược lại.
+   - Cấu hình OSPF đơn vùng (Single-Area OSPF Area 0) trên RTR-MAIN-01, RTR-MAIN-02, RTR-DBP-01 và RTR-BHTQ-01 để đảm bảo các PC tại DBP và BHTQ ping thông suốt đến Server Farm tại Main Site và ngược lại.
    - Kiểm tra định tuyến default route `0.0.0.0 0.0.0.0` được router biên Main quảng bá qua OSPF (`default-information originate`) để toàn bộ các site phụ tự động nhận diện lối thoát ra Internet.
